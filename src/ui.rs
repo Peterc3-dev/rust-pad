@@ -10,16 +10,16 @@ use crate::app::{App, Mode, OutputKind};
 use crate::highlight;
 
 /// Phosphor green palette
-const GREEN: Color = Color::Rgb(0, 255, 65);
-const DIM_GREEN: Color = Color::Rgb(0, 180, 45);
+const GREEN: Color = Color::Rgb(0, 255, 200);
+const DIM_GREEN: Color = Color::Rgb(0, 128, 100);
 const BG: Color = Color::Rgb(5, 10, 5);
-const BORDER_GREEN: Color = Color::Rgb(0, 200, 50);
+const BORDER_GREEN: Color = Color::Rgb(0, 200, 156);
 const ERROR_RED: Color = Color::Rgb(255, 60, 60);
 const WARN_YELLOW: Color = Color::Rgb(255, 200, 60);
-const OUTPUT_GREEN: Color = Color::Rgb(100, 255, 130);
-const INFO_DIM: Color = Color::Rgb(120, 160, 120);
+const OUTPUT_GREEN: Color = Color::Rgb(100, 255, 210);
+const INFO_DIM: Color = Color::Rgb(100, 160, 140);
 const LINE_NUM: Color = Color::Rgb(60, 120, 60);
-const _CURSOR_BG: Color = Color::Rgb(0, 100, 30);
+const _CURSOR_BG: Color = Color::Rgb(0, 100, 80);
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let size = f.area();

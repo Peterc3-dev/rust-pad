@@ -15,9 +15,9 @@ const TYPES: &[&str] = &[
 ];
 
 /// Phosphor green (#00FF41) base
-const GREEN: Color = Color::Rgb(0, 255, 65);
-const DIM_GREEN: Color = Color::Rgb(0, 180, 45);
-const KEYWORD_GREEN: Color = Color::Rgb(80, 255, 120);
+const GREEN: Color = Color::Rgb(0, 255, 200);
+const DIM_GREEN: Color = Color::Rgb(0, 128, 100);
+const KEYWORD_GREEN: Color = Color::Rgb(80, 255, 210);
 const TYPE_CYAN: Color = Color::Rgb(0, 255, 220);
 const STRING_YELLOW: Color = Color::Rgb(255, 220, 80);
 const COMMENT_DIM: Color = Color::Rgb(100, 120, 100);
