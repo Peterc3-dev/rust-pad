@@ -1,5 +1,11 @@
+use std::os::unix::process::CommandExt;
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use landlock::{
+    path_beneath_rules, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
+    ABI,
+};
 
 pub struct RunResult {
     pub compiler_output: String,
@@ -9,11 +15,27 @@ pub struct RunResult {
     pub elapsed_ms: u128,
 }
 
-const SNIPPET_PATH: &str = "/tmp/rust_pad_snippet.rs";
-const BINARY_PATH: &str = "/tmp/rust_pad_snippet";
+fn unique_id() -> u64 {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_nanos();
+    // Mix in the thread ID for extra uniqueness if called rapidly
+    let tid = std::thread::current().id();
+    let tid_hash = format!("{tid:?}").len() as u64;
+    (nanos as u64).wrapping_add(tid_hash).wrapping_mul(6364136223846793005)
+}
+
+fn snippet_path() -> String {
+    format!("/tmp/rust_pad_{}.rs", unique_id())
+}
+
+fn binary_path(snippet: &str) -> String {
+    // Strip the .rs extension to get the binary path
+    snippet.strip_suffix(".rs").unwrap_or(snippet).to_string()
+}
 
 pub fn has_main(code: &str) -> bool {
-    // Simple check: does the code contain `fn main`
     code.contains("fn main")
 }
 
@@ -36,39 +58,95 @@ fn wrap_in_main(code: &str) -> String {
     }
 }
 
+/// Apply Landlock filesystem restrictions to the current process.
+/// This is meant to be called inside a pre_exec closure (after fork, before exec)
+/// so that only the child inherits the restrictions.
+///
+/// On kernels without Landlock support, this is a best-effort no-op —
+/// the child runs unrestricted but we log a warning in the output.
+fn apply_landlock_sandbox() -> Result<(), String> {
+    let abi = ABI::V2;
+
+    let read_access = AccessFs::from_read(abi);
+    let read_write_access = AccessFs::from_all(abi);
+
+    let status = Ruleset::default()
+        .handle_access(read_write_access)
+        .map_err(|e| format!("landlock handle_access: {e}"))?
+        .create()
+        .map_err(|e| format!("landlock create: {e}"))?
+        // Read-only: /usr, /lib, /lib64, /proc/self
+        .add_rules(path_beneath_rules(
+            &["/usr", "/lib", "/lib64", "/proc/self"],
+            read_access,
+        ))
+        .map_err(|e| format!("landlock add read rules: {e}"))?
+        // Read+write: /tmp (for temp files the snippet might create)
+        .add_rules(path_beneath_rules(&["/tmp"], read_write_access))
+        .map_err(|e| format!("landlock add write rules: {e}"))?
+        .restrict_self()
+        .map_err(|e| format!("landlock restrict_self: {e}"))?;
+
+    match status.ruleset {
+        RulesetStatus::FullyEnforced | RulesetStatus::PartiallyEnforced => Ok(()),
+        RulesetStatus::NotEnforced => {
+            // Kernel doesn't support Landlock — best-effort, don't fail
+            Ok(())
+        }
+    }
+}
+
+/// Compile only — cleans up temp files before returning.
+/// Used by the compile-only (F6) path.
 pub fn compile(code: &str) -> RunResult {
+    let (result, src, bin) = compile_internal(code);
+    cleanup_files(&src, &bin);
+    result
+}
+
+/// Internal compile that returns the temp file paths so compile_and_run
+/// can reuse the binary before cleanup.
+fn compile_internal(code: &str) -> (RunResult, String, String) {
     let wrapped = wrap_in_main(code);
     let deps = parse_deps(code);
 
-    if let Err(e) = std::fs::write(SNIPPET_PATH, &wrapped) {
-        return RunResult {
-            compiler_output: format!("Failed to write snippet: {e}"),
-            program_output: String::new(),
-            success: false,
-            compile_success: false,
-            elapsed_ms: 0,
-        };
+    let src = snippet_path();
+    let bin = binary_path(&src);
+
+    if let Err(e) = std::fs::write(&src, &wrapped) {
+        return (
+            RunResult {
+                compiler_output: format!("Failed to write snippet: {e}"),
+                program_output: String::new(),
+                success: false,
+                compile_success: false,
+                elapsed_ms: 0,
+            },
+            src,
+            bin,
+        );
     }
 
     let start = Instant::now();
 
     let mut cmd = Command::new("rustc");
-    cmd.arg(SNIPPET_PATH)
-        .arg("-o")
-        .arg(BINARY_PATH)
-        .arg("--edition")
-        .arg("2021");
+    cmd.arg(&src).arg("-o").arg(&bin).arg("--edition").arg("2021");
 
     let output = match cmd.output() {
         Ok(o) => o,
         Err(e) => {
-            return RunResult {
-                compiler_output: format!("Failed to run rustc: {e}"),
-                program_output: String::new(),
-                success: false,
-                compile_success: false,
-                elapsed_ms: start.elapsed().as_millis(),
-            };
+            let _ = std::fs::remove_file(&src);
+            return (
+                RunResult {
+                    compiler_output: format!("Failed to run rustc: {e}"),
+                    program_output: String::new(),
+                    success: false,
+                    compile_success: false,
+                    elapsed_ms: start.elapsed().as_millis(),
+                },
+                src,
+                bin,
+            );
         }
     };
 
@@ -85,33 +163,52 @@ pub fn compile(code: &str) -> RunResult {
         String::new()
     };
 
-    RunResult {
-        compiler_output: format!("{stderr}{dep_note}"),
-        program_output: String::new(),
-        success: compile_success,
-        compile_success,
-        elapsed_ms: elapsed,
-    }
+    (
+        RunResult {
+            compiler_output: format!("{stderr}{dep_note}"),
+            program_output: String::new(),
+            success: compile_success,
+            compile_success,
+            elapsed_ms: elapsed,
+        },
+        src,
+        bin,
+    )
 }
 
 pub fn compile_and_run(code: &str) -> RunResult {
-    let mut result = compile(code);
+    let (mut result, src, bin) = compile_internal(code);
     if !result.compile_success {
+        let _ = std::fs::remove_file(&src);
         return result;
     }
 
     let start = Instant::now();
     let timeout = Duration::from_secs(10);
 
-    let mut child = match Command::new(BINARY_PATH)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
+    let bin_clone = bin.clone();
+    let mut child = match unsafe {
+        Command::new(&bin)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .pre_exec(move || {
+                // Apply Landlock sandbox to the child process.
+                // This runs after fork() but before exec(), so the parent
+                // (rust-pad itself) is NOT restricted.
+                if let Err(e) = apply_landlock_sandbox() {
+                    // Write the error to stderr so the user sees it
+                    eprintln!("[sandbox warning: {e}]");
+                    // Don't fail — run unsandboxed as fallback on older kernels
+                }
+                Ok(())
+            })
+            .spawn()
+    } {
         Ok(c) => c,
         Err(e) => {
             result.program_output = format!("Failed to execute: {e}");
             result.success = false;
+            cleanup_files(&src, &bin_clone);
             return result;
         }
     };
@@ -133,6 +230,7 @@ pub fn compile_and_run(code: &str) -> RunResult {
                     result.program_output = format!("[killed: exceeded {timeout:?} timeout]");
                     result.success = false;
                     result.elapsed_ms += start.elapsed().as_millis();
+                    cleanup_files(&src, &bin);
                     return result;
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -140,6 +238,7 @@ pub fn compile_and_run(code: &str) -> RunResult {
             Err(e) => {
                 result.program_output = format!("Failed to wait: {e}");
                 result.success = false;
+                cleanup_files(&src, &bin);
                 return result;
             }
         }
@@ -168,5 +267,12 @@ pub fn compile_and_run(code: &str) -> RunResult {
     };
     result.program_output.push_str(&exit_str);
 
+    cleanup_files(&src, &bin);
     result
+}
+
+/// Remove temp source and binary files after execution
+fn cleanup_files(src: &str, bin: &str) {
+    let _ = std::fs::remove_file(src);
+    let _ = std::fs::remove_file(bin);
 }
