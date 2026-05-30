@@ -142,17 +142,13 @@ impl Editor {
                     self.cursor_col = 0;
                 }
             }
-            KeyCode::Up => {
-                if self.cursor_row > 0 {
-                    self.cursor_row -= 1;
-                    self.clamp_col();
-                }
+            KeyCode::Up if self.cursor_row > 0 => {
+                self.cursor_row -= 1;
+                self.clamp_col();
             }
-            KeyCode::Down => {
-                if self.cursor_row + 1 < self.lines.len() {
-                    self.cursor_row += 1;
-                    self.clamp_col();
-                }
+            KeyCode::Down if self.cursor_row + 1 < self.lines.len() => {
+                self.cursor_row += 1;
+                self.clamp_col();
             }
             KeyCode::Home => {
                 self.cursor_col = 0;
@@ -215,5 +211,88 @@ impl Editor {
             i += 1;
         }
         self.cursor_col = i;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_editor_is_empty() {
+        let ed = Editor::new();
+        assert!(ed.is_empty());
+        assert_eq!(ed.content(), "");
+        assert_eq!(ed.cursor_row, 0);
+        assert_eq!(ed.cursor_col, 0);
+    }
+
+    #[test]
+    fn set_content_splits_into_lines() {
+        let mut ed = Editor::new();
+        ed.set_content("a\nb\nc");
+        assert_eq!(ed.lines, vec!["a", "b", "c"]);
+        assert_eq!(ed.content(), "a\nb\nc");
+        assert!(!ed.is_empty());
+        // Cursor resets to the top.
+        assert_eq!((ed.cursor_row, ed.cursor_col), (0, 0));
+    }
+
+    #[test]
+    fn set_content_empty_keeps_one_line() {
+        let mut ed = Editor::new();
+        ed.set_content("");
+        assert_eq!(ed.lines, vec![String::new()]);
+        assert!(ed.is_empty());
+    }
+
+    #[test]
+    fn insert_str_advances_cursor() {
+        let mut ed = Editor::new();
+        ed.insert_str("abc");
+        assert_eq!(ed.content(), "abc");
+        assert_eq!(ed.cursor_col, 3);
+    }
+
+    #[test]
+    fn newline_carries_leading_indent() {
+        let mut ed = Editor::new();
+        ed.insert_str("    foo");
+        ed.insert_newline();
+        assert_eq!(ed.lines, vec!["    foo", "    "]);
+        // Cursor sits after the carried-over indentation.
+        assert_eq!(ed.cursor_row, 1);
+        assert_eq!(ed.cursor_col, 4);
+    }
+
+    #[test]
+    fn newline_splits_line_at_cursor() {
+        let mut ed = Editor::new();
+        ed.set_content("abcd");
+        ed.cursor_col = 2;
+        ed.insert_newline();
+        assert_eq!(ed.lines, vec!["ab", "cd"]);
+    }
+
+    #[test]
+    fn backspace_joins_lines_at_start_of_line() {
+        let mut ed = Editor::new();
+        ed.set_content("ab\ncd");
+        ed.cursor_row = 1;
+        ed.cursor_col = 0;
+        ed.backspace();
+        assert_eq!(ed.lines, vec!["abcd"]);
+        assert_eq!(ed.cursor_row, 0);
+        assert_eq!(ed.cursor_col, 2);
+    }
+
+    #[test]
+    fn delete_merges_next_line_at_end_of_line() {
+        let mut ed = Editor::new();
+        ed.set_content("ab\ncd");
+        ed.cursor_row = 0;
+        ed.cursor_col = 2;
+        ed.delete();
+        assert_eq!(ed.lines, vec!["abcd"]);
     }
 }

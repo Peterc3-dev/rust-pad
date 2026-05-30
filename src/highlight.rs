@@ -2,15 +2,49 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
 const KEYWORDS: &[&str] = &[
-    "fn", "let", "mut", "if", "else", "while", "for", "loop", "match", "return", "break",
-    "continue", "struct", "enum", "impl", "trait", "pub", "mod", "use", "crate", "self", "super",
-    "as", "in", "ref", "move", "async", "await", "dyn", "where", "type", "const", "static",
-    "unsafe", "extern", "true", "false", "macro_rules",
+    "fn",
+    "let",
+    "mut",
+    "if",
+    "else",
+    "while",
+    "for",
+    "loop",
+    "match",
+    "return",
+    "break",
+    "continue",
+    "struct",
+    "enum",
+    "impl",
+    "trait",
+    "pub",
+    "mod",
+    "use",
+    "crate",
+    "self",
+    "super",
+    "as",
+    "in",
+    "ref",
+    "move",
+    "async",
+    "await",
+    "dyn",
+    "where",
+    "type",
+    "const",
+    "static",
+    "unsafe",
+    "extern",
+    "true",
+    "false",
+    "macro_rules",
 ];
 
 const TYPES: &[&str] = &[
-    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
-    "f32", "f64", "bool", "char", "str", "String", "Vec", "Option", "Result", "Box", "Rc", "Arc",
+    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
+    "f64", "bool", "char", "str", "String", "Vec", "Option", "Result", "Box", "Rc", "Arc",
     "HashMap", "HashSet", "BTreeMap", "BTreeSet", "Self",
 ];
 
@@ -82,10 +116,15 @@ pub fn highlight_line(line: &str) -> Line<'static> {
             && (i == 0 || !chars[i - 1].is_alphanumeric() && chars[i - 1] != '_')
         {
             let mut j = i;
-            if j + 1 < len && chars[j] == '0' && (chars[j + 1] == 'x' || chars[j + 1] == 'b' || chars[j + 1] == 'o') {
+            if j + 1 < len
+                && chars[j] == '0'
+                && (chars[j + 1] == 'x' || chars[j + 1] == 'b' || chars[j + 1] == 'o')
+            {
                 j += 2;
             }
-            while j < len && (chars[j].is_ascii_alphanumeric() || chars[j] == '_' || chars[j] == '.') {
+            while j < len
+                && (chars[j].is_ascii_alphanumeric() || chars[j] == '_' || chars[j] == '.')
+            {
                 j += 1;
             }
             let s: String = chars[i..j].iter().collect();
@@ -133,4 +172,70 @@ pub fn highlight_line(line: &str) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Concatenate the text of every span back into a single string.
+    fn rendered(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn highlighting_preserves_source_text() {
+        for src in [
+            "fn main() {}",
+            "let x = 42;",
+            "println!(\"hello\");",
+            "// a comment",
+            "let s = \"escaped \\\" quote\";",
+            "",
+        ] {
+            assert_eq!(rendered(&highlight_line(src)), src, "src: {src:?}");
+        }
+    }
+
+    #[test]
+    fn empty_line_yields_one_empty_span() {
+        let line = highlight_line("");
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(line.spans[0].content.as_ref(), "");
+    }
+
+    #[test]
+    fn keyword_is_styled_distinctly_from_identifier() {
+        let line = highlight_line("fn foo");
+        let kw = line
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "fn")
+            .expect("keyword span present");
+        let ident = line
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "foo")
+            .expect("identifier span present");
+        assert_eq!(kw.style.fg, Some(KEYWORD_GREEN));
+        assert_eq!(ident.style.fg, Some(GREEN));
+    }
+
+    #[test]
+    fn macro_invocation_is_styled() {
+        let line = highlight_line("println!(\"x\")");
+        let mac = line
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref() == "println!")
+            .expect("macro span present");
+        assert_eq!(mac.style.fg, Some(MACRO_MAGENTA));
+    }
+
+    #[test]
+    fn string_literal_is_styled() {
+        let line = highlight_line("\"hi\"");
+        assert_eq!(line.spans[0].content.as_ref(), "\"hi\"");
+        assert_eq!(line.spans[0].style.fg, Some(STRING_YELLOW));
+    }
 }

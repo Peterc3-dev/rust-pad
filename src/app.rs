@@ -138,7 +138,8 @@ impl App {
                 kind: OutputKind::Normal,
             });
             for line in result.program_output.lines() {
-                let kind = if line.starts_with("[stderr]") || line.starts_with("[exit code:")
+                let kind = if line.starts_with("[stderr]")
+                    || line.starts_with("[exit code:")
                     || line.starts_with("[killed")
                 {
                     OutputKind::Error

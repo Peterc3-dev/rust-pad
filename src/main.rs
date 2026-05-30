@@ -66,10 +66,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
@@ -99,22 +96,16 @@ fn run_app(
                     KeyCode::Esc => {
                         app.mode = app::Mode::Editing;
                     }
-                    KeyCode::Up => {
-                        if app.browser_index > 0 {
-                            app.browser_index -= 1;
-                        }
+                    KeyCode::Up if app.browser_index > 0 => {
+                        app.browser_index -= 1;
                     }
-                    KeyCode::Down => {
-                        if app.browser_index + 1 < app.browser_items.len() {
-                            app.browser_index += 1;
-                        }
+                    KeyCode::Down if app.browser_index + 1 < app.browser_items.len() => {
+                        app.browser_index += 1;
                     }
                     KeyCode::Enter => {
                         app.load_selected_browser_item();
                     }
-                    KeyCode::Char('d')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.delete_selected_browser_item();
                     }
                     _ => {}

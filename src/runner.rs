@@ -23,7 +23,9 @@ fn unique_id() -> u64 {
     // Mix in the thread ID for extra uniqueness if called rapidly
     let tid = std::thread::current().id();
     let tid_hash = format!("{tid:?}").len() as u64;
-    (nanos as u64).wrapping_add(tid_hash).wrapping_mul(6364136223846793005)
+    (nanos as u64)
+        .wrapping_add(tid_hash)
+        .wrapping_mul(6364136223846793005)
 }
 
 fn snippet_path() -> String {
@@ -130,7 +132,11 @@ fn compile_internal(code: &str) -> (RunResult, String, String) {
     let start = Instant::now();
 
     let mut cmd = Command::new("rustc");
-    cmd.arg(&src).arg("-o").arg(&bin).arg("--edition").arg("2021");
+    cmd.arg(&src)
+        .arg("-o")
+        .arg(&bin)
+        .arg("--edition")
+        .arg("2021");
 
     let output = match cmd.output() {
         Ok(o) => o,
@@ -216,11 +222,13 @@ pub fn compile_and_run(code: &str) -> RunResult {
     let run_output = loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let out = child.wait_with_output().unwrap_or_else(|_| std::process::Output {
-                    status,
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                });
+                let out = child
+                    .wait_with_output()
+                    .unwrap_or_else(|_| std::process::Output {
+                        status,
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                    });
                 break out;
             }
             Ok(None) => {
@@ -275,4 +283,51 @@ pub fn compile_and_run(code: &str) -> RunResult {
 fn cleanup_files(src: &str, bin: &str) {
     let _ = std::fs::remove_file(src);
     let _ = std::fs::remove_file(bin);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn has_main_detects_main_fn() {
+        assert!(has_main("fn main() {}"));
+        assert!(has_main("    fn main()   {  }"));
+        assert!(!has_main("println!(\"hi\");"));
+        assert!(!has_main(""));
+    }
+
+    #[test]
+    fn wrap_in_main_leaves_existing_main_untouched() {
+        let code = "fn main() {\n    println!(\"hi\");\n}";
+        assert_eq!(wrap_in_main(code), code);
+    }
+
+    #[test]
+    fn wrap_in_main_wraps_bare_statements() {
+        let wrapped = wrap_in_main("println!(\"hi\");");
+        assert!(wrapped.starts_with("fn main() {"));
+        assert!(wrapped.contains("println!(\"hi\");"));
+        assert!(wrapped.trim_end().ends_with('}'));
+        assert!(has_main(&wrapped));
+    }
+
+    #[test]
+    fn parse_deps_extracts_dep_directives() {
+        let code = "//! dep: reqwest\n//! dep:  tokio \nfn main() {}";
+        assert_eq!(parse_deps(code), vec!["reqwest", "tokio"]);
+    }
+
+    #[test]
+    fn parse_deps_ignores_non_dep_lines() {
+        let code = "// dep: not-a-dep\nfn main() {}";
+        assert!(parse_deps(code).is_empty());
+    }
+
+    #[test]
+    fn binary_path_strips_rs_extension() {
+        assert_eq!(binary_path("/tmp/rust_pad_42.rs"), "/tmp/rust_pad_42");
+        // No .rs suffix: returned unchanged.
+        assert_eq!(binary_path("/tmp/rust_pad_42"), "/tmp/rust_pad_42");
+    }
 }
