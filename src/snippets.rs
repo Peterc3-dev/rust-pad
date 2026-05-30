@@ -55,12 +55,7 @@ fn prune_history(max: usize) {
     let mut entries: Vec<_> = match fs::read_dir(&dir) {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "rs")
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|ext| ext == "rs").unwrap_or(false))
             .collect(),
         Err(_) => return,
     };
@@ -90,12 +85,7 @@ fn list_dir_rs(dir: &PathBuf) -> Vec<(String, PathBuf)> {
     let mut items: Vec<(String, PathBuf)> = match fs::read_dir(dir) {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "rs")
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|ext| ext == "rs").unwrap_or(false))
             .map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
                 (name, e.path())

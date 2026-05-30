@@ -102,9 +102,8 @@ fn draw_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
         // If this is the cursor line, give it a subtle highlight
         if line_idx == app.editor.cursor_row {
-            let highlight_block = Block::default().style(
-                Style::default().bg(Color::Rgb(10, 30, 10)),
-            );
+            let highlight_block =
+                Block::default().style(Style::default().bg(Color::Rgb(10, 30, 10)));
             f.render_widget(highlight_block, line_area);
         }
 
@@ -114,9 +113,11 @@ fn draw_editor(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Set cursor position
     if app.mode == Mode::Editing {
-        let cursor_screen_row = app.editor.cursor_row.saturating_sub(app.editor.scroll_offset);
-        let cursor_x =
-            inner.x + line_num_width as u16 + 1 + app.editor.cursor_col as u16;
+        let cursor_screen_row = app
+            .editor
+            .cursor_row
+            .saturating_sub(app.editor.scroll_offset);
+        let cursor_x = inner.x + line_num_width as u16 + 1 + app.editor.cursor_col as u16;
         let cursor_y = inner.y + cursor_screen_row as u16;
 
         if cursor_x < inner.x + inner.width && cursor_y < inner.y + inner.height {
@@ -156,7 +157,7 @@ fn draw_output(f: &mut Frame, app: &App, area: Rect) {
     // Auto-scroll to bottom
     let total = lines.len();
     let visible = inner.height as usize;
-    let scroll = if total > visible { total - visible } else { 0 };
+    let scroll = total.saturating_sub(visible);
 
     let para = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
@@ -206,10 +207,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         0
     };
 
-    let pad_span = Span::styled(
-        " ".repeat(padding),
-        Style::default().bg(GREEN),
-    );
+    let pad_span = Span::styled(" ".repeat(padding), Style::default().bg(GREEN));
 
     let bar = Line::from(vec![left, pad_span, right]);
     let para = Paragraph::new(bar);
@@ -238,10 +236,7 @@ fn draw_save_prompt(f: &mut Frame, _app: &App, area: Rect) {
     f.render_widget(block, popup_area);
 
     let prompt = format!("Name: {}_", _app.save_input);
-    let para = Paragraph::new(Line::from(Span::styled(
-        prompt,
-        Style::default().fg(GREEN),
-    )));
+    let para = Paragraph::new(Line::from(Span::styled(prompt, Style::default().fg(GREEN))));
     f.render_widget(para, inner);
 }
 
@@ -285,10 +280,7 @@ fn draw_browser(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(DIM_GREEN)
             };
-            ListItem::new(Line::from(Span::styled(
-                format!("  {name}"),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(format!("  {name}"), style)))
         })
         .collect();
 
